@@ -505,6 +505,8 @@ class SamApiSpec extends FreeSpec with BillingFixtures with Matchers with ScalaF
         Await.result(googleDirectoryDAO.listGroupMembers(adminNotifierPolicy.email), 5.minutes)
           .getOrElse(Set.empty) should contain theSameElementsAs Set(allUsersGroupEmail.value),
         5.minutes, 5.seconds)
+
+      assert(false)
     }
   }
 
