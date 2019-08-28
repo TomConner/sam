@@ -359,28 +359,17 @@ class PostgresAccessPolicyDAO(protected val dbRef: DbReference,
   }
 
   override def loadPolicy(resourceAndPolicyName: FullyQualifiedPolicyId): IO[Option[AccessPolicy]] = {
-    val g = GroupTable.syntax("g")
-    val r = ResourceTable.syntax("r")
-    val rt = ResourceTypeTable.syntax("rt")
-    val gm = GroupMemberTable.syntax("gm")
-    val sg = GroupTable.syntax("sg")
-    val p = PolicyTable.syntax("p")
-    val pr = PolicyRoleTable.syntax("pr")
-    val rr = ResourceRoleTable.syntax("rr")
-    val pa = PolicyActionTable.syntax("pa")
-    val ra = ResourceActionTable.syntax("ra")
-    val sp = PolicyTable.syntax("sp")
-    val sr = ResourceTable.syntax("sr")
-    val srt = ResourceTypeTable.syntax("srt")
+    val loadPolicyContext = new LoadPolicyContext
 
     val loadPolicyQuery =
-      samsql"""${selectPolicy(g, p, r, rt, gm, sg, sp, sr, srt, pr, rr, pa, ra)}
-          where ${p.name} = ${resourceAndPolicyName.accessPolicyName}
-          and ${r.name} = ${resourceAndPolicyName.resource.resourceId}
-          and ${rt.name} = ${resourceAndPolicyName.resource.resourceTypeName}"""
+      samsql"""${selectPolicy(loadPolicyContext)}
+          where ${loadPolicyContext.p.name} = ${resourceAndPolicyName.accessPolicyName}
+          and ${loadPolicyContext.r.name} = ${resourceAndPolicyName.resource.resourceId}
+          and ${loadPolicyContext.rt.name} = ${resourceAndPolicyName.resource.resourceTypeName}"""
 
-    loadAccessPolicies(loadPolicyQuery, g, p, r, rt, gm, sg, sp, sr, srt, pr, rr, pa, ra).map(_.headOption)
+    loadAccessPolicies(loadPolicyQuery, loadPolicyContext).map(_.headOption)
   }
+
   override def overwritePolicyMembers(id: FullyQualifiedPolicyId, memberList: Set[WorkbenchSubject]): IO[Unit] = ???
   override def overwritePolicy(newPolicy: AccessPolicy): IO[AccessPolicy] = ???
 
@@ -404,25 +393,13 @@ class PostgresAccessPolicyDAO(protected val dbRef: DbReference,
   }
 
   override def listPublicAccessPolicies(resource: FullyQualifiedResourceId): IO[Stream[AccessPolicy]] = {
-    val g = GroupTable.syntax("g")
-    val r = ResourceTable.syntax("r")
-    val rt = ResourceTypeTable.syntax("rt")
-    val gm = GroupMemberTable.syntax("gm")
-    val sg = GroupTable.syntax("sg")
-    val p = PolicyTable.syntax("p")
-    val pr = PolicyRoleTable.syntax("pr")
-    val rr = ResourceRoleTable.syntax("rr")
-    val pa = PolicyActionTable.syntax("pa")
-    val ra = ResourceActionTable.syntax("ra")
-    val sp = PolicyTable.syntax("sp")
-    val sr = ResourceTable.syntax("sr")
-    val srt = ResourceTypeTable.syntax("srt")
+    val loadPolicyContext = new LoadPolicyContext
 
-    val loadPoliciesQuery = samsql"""${selectPolicy(g, p, r, rt, gm, sg, sp, sr, srt, pr, rr, pa, ra)}
-                                 where ${r.name} = ${resource.resourceId}
-                                 and ${rt.name} = ${resource.resourceTypeName}
-                                 and ${p.public} = true"""
-    loadAccessPolicies(loadPoliciesQuery, g, p, r, rt, gm, sg, sp, sr, srt, pr, rr, pa, ra).map(_.toStream)
+    val loadPoliciesQuery = samsql"""${selectPolicy(loadPolicyContext)}
+                                 where ${loadPolicyContext.r.name} = ${resource.resourceId}
+                                 and ${loadPolicyContext.rt.name} = ${resource.resourceTypeName}
+                                 and ${loadPolicyContext.p.public} = true"""
+    loadAccessPolicies(loadPoliciesQuery, loadPolicyContext).map(_.toStream)
   }
 
   override def listResourcesWithAuthdomains(resourceTypeName: ResourceTypeName, resourceId: Set[ResourceId]): IO[Set[Resource]] = {
@@ -488,60 +465,12 @@ class PostgresAccessPolicyDAO(protected val dbRef: DbReference,
   }
 
   override def listAccessPolicies(resource: FullyQualifiedResourceId): IO[Stream[AccessPolicy]] = {
-    val g = GroupTable.syntax("g")
-    val r = ResourceTable.syntax("r")
-    val rt = ResourceTypeTable.syntax("rt")
-    val gm = GroupMemberTable.syntax("gm")
-    val sg = GroupTable.syntax("sg")
-    val p = PolicyTable.syntax("p")
-    val pr = PolicyRoleTable.syntax("pr")
-    val rr = ResourceRoleTable.syntax("rr")
-    val pa = PolicyActionTable.syntax("pa")
-    val ra = ResourceActionTable.syntax("ra")
-    val sp = PolicyTable.syntax("sp")
-    val sr = ResourceTable.syntax("sr")
-    val srt = ResourceTypeTable.syntax("srt")
+    val loadPolicyContext = new LoadPolicyContext
 
-    val loadPoliciesQuery = samsql"""${selectPolicy(g, p, r, rt, gm, sg, sp, sr, srt, pr, rr, pa, ra)}
-                                 where ${r.name} = ${resource.resourceId}
-                                 and ${rt.name} = ${resource.resourceTypeName}"""
-    loadAccessPolicies(loadPoliciesQuery, g, p, r, rt, gm, sg, sp, sr, srt, pr, rr, pa, ra).map(_.toStream)
-  }
-
-  private def loadAccessPolicies(policyQuery: SQL[Nothing, NoExtractor],
-                                 g: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupRecord], GroupRecord],
-                                 p: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRecord], PolicyRecord],
-                                 r: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRecord], ResourceRecord],
-                                 rt: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceTypeRecord], ResourceTypeRecord],
-                                 gm: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupMemberRecord], GroupMemberRecord],
-                                 sg: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupRecord], GroupRecord],
-                                 sp: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRecord], PolicyRecord],
-                                 sr: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRecord], ResourceRecord],
-                                 srt: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceTypeRecord], ResourceTypeRecord],
-                                 pr: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRoleRecord], PolicyRoleRecord],
-                                 rr: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRoleRecord], ResourceRoleRecord],
-                                 pa: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyActionRecord], PolicyActionRecord],
-                                 ra: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceActionRecord], ResourceActionRecord]): IO[Set[AccessPolicy]] = {
-    runInTransaction { implicit session =>
-      import SamTypeBinders._
-      val results = policyQuery.map(rs => (PolicyInfo(rs.get[AccessPolicyName](p.resultName.name), rs.get[ResourceId](r.resultName.name), rs.get[ResourceTypeName](rt.resultName.name), rs.get[WorkbenchEmail](g.resultName.email), rs.boolean(p.resultName.public)),
-        (rs.stringOpt(gm.resultName.memberUserId).map(WorkbenchUserId), rs.stringOpt(sg.resultName.name).map(WorkbenchGroupName), rs.stringOpt(sp.resultName.name).map(AccessPolicyName(_)), rs.stringOpt(sr.resultName.name).map(ResourceId(_)), rs.stringOpt(srt.resultName.name).map(ResourceTypeName(_))),
-        (rs.stringOpt(rr.resultName.role).map(ResourceRoleName(_)), rs.stringOpt(ra.resultName.action).map(ResourceAction(_))))).list().apply().groupBy(_._1)
-
-      results.map { case (policyInfo, resultsByPolicy) =>
-        val (_, memberResults, roleActionResults) = resultsByPolicy.unzip3
-
-        val members: Set[WorkbenchSubject] = memberResults.collect {
-          case (Some(userId), None, None, None, None) => userId
-          case (None, Some(groupName), None, None, None) => groupName
-          case (None, Some(_), Some(policyName), Some(resourceName), Some(resourceTypeName)) => FullyQualifiedPolicyId(FullyQualifiedResourceId(resourceTypeName, resourceName), policyName)
-        }.toSet
-
-        val (roles, actions) = roleActionResults.unzip
-
-        AccessPolicy(FullyQualifiedPolicyId(FullyQualifiedResourceId(policyInfo.resourceTypeName, policyInfo.resourceId), policyInfo.name), members, policyInfo.email, roles.flatten.toSet, actions.flatten.toSet, policyInfo.public)
-      }.toSet
-    }
+    val loadPoliciesQuery = samsql"""${selectPolicy(loadPolicyContext)}
+                                 where ${loadPolicyContext.r.name} = ${resource.resourceId}
+                                 and ${loadPolicyContext.rt.name} = ${resource.resourceTypeName}"""
+    loadAccessPolicies(loadPoliciesQuery, loadPolicyContext).map(_.toStream)
   }
 
   override def listAccessPoliciesForUser(resource: FullyQualifiedResourceId, user: WorkbenchUserId): IO[Set[AccessPolicy]] = {
@@ -550,68 +479,24 @@ class PostgresAccessPolicyDAO(protected val dbRef: DbReference,
     val agColumn = ancestorGroupsTable.column
 
     val pg = GroupMemberTable.syntax("parent_groups")
-    val r = ResourceTable.syntax("r")
-    val rt = ResourceTypeTable.syntax("rt")
-    val gm = GroupMemberTable.syntax("gm")
-    val g = GroupTable.syntax("g")
-    val p = PolicyTable.syntax("p")
 
-    val sg = GroupTable.syntax("sg")
-    val pr = PolicyRoleTable.syntax("pr")
-    val rr = ResourceRoleTable.syntax("rr")
-    val pa = PolicyActionTable.syntax("pa")
-    val ra = ResourceActionTable.syntax("ra")
-    val sp = PolicyTable.syntax("sp")
-    val sr = ResourceTable.syntax("sr")
-    val srt = ResourceTypeTable.syntax("srt")
-
-    val ancestorGroupsTableJoin = samsqls"join ${ancestorGroupsTable as ag} on ${ag.parentGroupId} = ${g.id}"
+    val loadPolicyContext = new LoadPolicyContext
+    val ancestorGroupsTableJoin = samsqls"join ${ancestorGroupsTable as ag} on ${ag.parentGroupId} = ${loadPolicyContext.g.id}"
 
     val listPoliciesQuery =
       samsql"""with recursive ${ancestorGroupsTable.table}(${agColumn.parentGroupId}, ${agColumn.memberGroupId}) as (
-                  select ${gm.groupId}, ${gm.memberGroupId}
-                  from ${GroupMemberTable as gm}
-                  where ${gm.memberUserId} = ${user}
+                  select ${loadPolicyContext.gm.groupId}, ${loadPolicyContext.gm.memberGroupId}
+                  from ${GroupMemberTable as loadPolicyContext.gm}
+                  where ${loadPolicyContext.gm.memberUserId} = ${user}
                   union
                   select ${pg.groupId}, ${pg.memberGroupId}
                   from ${GroupMemberTable as pg}
                   join ${ancestorGroupsTable as ag} on ${agColumn.parentGroupId} = ${pg.memberGroupId}
-        ) ${selectPolicy(g, p, r, rt, gm, sg, sp, sr, srt, pr, rr, pa, ra, ancestorGroupsTableJoin)}
-          where ${r.name} = ${resource.resourceId}
-          and ${rt.name} = ${resource.resourceTypeName}"""
+        ) ${selectPolicy(loadPolicyContext, ancestorGroupsTableJoin)}
+          where ${loadPolicyContext.r.name} = ${resource.resourceId}
+          and ${loadPolicyContext.rt.name} = ${resource.resourceTypeName}"""
 
-    loadAccessPolicies(listPoliciesQuery, g, p, r, rt, gm, sg, sp, sr, srt, pr, rr, pa, ra)
-  }
-
-  private def selectPolicy(g: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupRecord], GroupRecord],
-                           p: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRecord], PolicyRecord],
-                           r: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRecord], ResourceRecord],
-                           rt: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceTypeRecord], ResourceTypeRecord],
-                           gm: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupMemberRecord], GroupMemberRecord],
-                           sg: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupRecord], GroupRecord],
-                           sp: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRecord], PolicyRecord],
-                           sr: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRecord], ResourceRecord],
-                           srt: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceTypeRecord], ResourceTypeRecord],
-                           pr: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRoleRecord], PolicyRoleRecord],
-                           rr: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRoleRecord], ResourceRoleRecord],
-                           pa: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyActionRecord], PolicyActionRecord],
-                           ra: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceActionRecord], ResourceActionRecord],
-                           ancestorGroupsTableJoin: SQLSyntax = samsqls""): SQLSyntax = {
-    samsqls"""select ${p.result.name}, ${r.result.name}, ${rt.result.name}, ${g.result.email}, ${p.result.public}, ${gm.result.memberUserId}, ${sg.result.name}, ${sp.result.name}, ${sr.result.name}, ${srt.result.name}, ${rr.result.role}, ${ra.result.action}
-      from ${GroupTable as g}
-      ${ancestorGroupsTableJoin}
-      join ${PolicyTable as p} on ${g.id} = ${p.groupId}
-      join ${ResourceTable as r} on ${p.resourceId} = ${r.id}
-      join ${ResourceTypeTable as rt} on ${r.resourceTypeId} = ${rt.id}
-      left join ${GroupMemberTable as gm} on ${g.id} = ${gm.groupId}
-      left join ${GroupTable as sg} on ${gm.memberGroupId} = ${sg.id}
-      left join ${PolicyTable as sp} on ${sg.id} = ${sp.groupId}
-      left join ${ResourceTable as sr} on ${sp.resourceId} = ${sr.id}
-      left join ${ResourceTypeTable as srt} on ${sr.resourceTypeId} = ${srt.id}
-      left join ${PolicyRoleTable as pr} on ${p.id} = ${pr.resourcePolicyId}
-      left join ${ResourceRoleTable as rr} on ${pr.resourceRoleId} = ${rr.id}
-      left join ${PolicyActionTable as pa} on ${p.id} = ${pa.resourcePolicyId}
-      left join ${ResourceActionTable as ra} on ${pa.resourceActionId} = ${ra.id}"""
+    loadAccessPolicies(listPoliciesQuery, loadPolicyContext)
   }
 
   override def listFlattenedPolicyMembers(policyId: FullyQualifiedPolicyId): IO[Set[WorkbenchUser]] = {
@@ -652,6 +537,77 @@ class PostgresAccessPolicyDAO(protected val dbRef: DbReference,
 
   override def evictIsMemberOfCache(subject: WorkbenchSubject): IO[Unit] = ???
 
+  /**
+    * Query to load all of the information from the DB required to create an AccessPolicy object. Pair with where clauses to select the desired policies
+    *
+    * @param loadPolicyContext contains all of the QuerySQLSyntaxProviders needed to reference required tables
+    * @param ancestorGroupsTableJoin optional join to support use in recursive calls
+    * @return
+    */
+  private def selectPolicy(loadPolicyContext: LoadPolicyContext,
+                           ancestorGroupsTableJoin: SQLSyntax = samsqls""): SQLSyntax = {
+    samsqls"""select ${loadPolicyContext.p.result.name}, ${loadPolicyContext.r.result.name}, ${loadPolicyContext.rt.result.name}, ${loadPolicyContext.g.result.email}, ${loadPolicyContext.p.result.public}, ${loadPolicyContext.gm.result.memberUserId}, ${loadPolicyContext.sg.result.name}, ${loadPolicyContext.sp.result.name}, ${loadPolicyContext.sr.result.name}, ${loadPolicyContext.srt.result.name}, ${loadPolicyContext.rr.result.role}, ${loadPolicyContext.ra.result.action}
+      from ${GroupTable as loadPolicyContext.g}
+      ${ancestorGroupsTableJoin}
+      join ${PolicyTable as loadPolicyContext.p} on ${loadPolicyContext.g.id} = ${loadPolicyContext.p.groupId}
+      join ${ResourceTable as loadPolicyContext.r} on ${loadPolicyContext.p.resourceId} = ${loadPolicyContext.r.id}
+      join ${ResourceTypeTable as loadPolicyContext.rt} on ${loadPolicyContext.r.resourceTypeId} = ${loadPolicyContext.rt.id}
+      left join ${GroupMemberTable as loadPolicyContext.gm} on ${loadPolicyContext.g.id} = ${loadPolicyContext.gm.groupId}
+      left join ${GroupTable as loadPolicyContext.sg} on ${loadPolicyContext.gm.memberGroupId} = ${loadPolicyContext.sg.id}
+      left join ${PolicyTable as loadPolicyContext.sp} on ${loadPolicyContext.sg.id} = ${loadPolicyContext.sp.groupId}
+      left join ${ResourceTable as loadPolicyContext.sr} on ${loadPolicyContext.sp.resourceId} = ${loadPolicyContext.sr.id}
+      left join ${ResourceTypeTable as loadPolicyContext.srt} on ${loadPolicyContext.sr.resourceTypeId} = ${loadPolicyContext.srt.id}
+      left join ${PolicyRoleTable as loadPolicyContext.pr} on ${loadPolicyContext.p.id} = ${loadPolicyContext.pr.resourcePolicyId}
+      left join ${ResourceRoleTable as loadPolicyContext.rr} on ${loadPolicyContext.pr.resourceRoleId} = ${loadPolicyContext.rr.id}
+      left join ${PolicyActionTable as loadPolicyContext.pa} on ${loadPolicyContext.p.id} = ${loadPolicyContext.pa.resourcePolicyId}
+      left join ${ResourceActionTable as loadPolicyContext.ra} on ${loadPolicyContext.pa.resourceActionId} = ${loadPolicyContext.ra.id}"""
+  }
+
+  /**
+    * Extract results from policyQuery and turn into AccessPolicy objects
+    *
+    * @param policyQuery query that will extract necessary information from DB to construct Access Policies
+    * @param loadPolicyContext contains all of the QuerySQLSyntaxProviders needed to reference correct results
+    * @return AccessPolicy objects loaded by policyQuery
+    */
+  private def loadAccessPolicies(policyQuery: SQL[Nothing, NoExtractor],
+                                 loadPolicyContext: LoadPolicyContext): IO[Set[AccessPolicy]] = {
+    case class PolicyInfo(name: AccessPolicyName, resourceId: ResourceId, resourceTypeName: ResourceTypeName, email: WorkbenchEmail, public: Boolean)
+
+    runInTransaction { implicit session =>
+      import SamTypeBinders._
+      val results = policyQuery.map(rs => (PolicyInfo(rs.get[AccessPolicyName](loadPolicyContext.p.resultName.name), rs.get[ResourceId](loadPolicyContext.r.resultName.name), rs.get[ResourceTypeName](loadPolicyContext.rt.resultName.name), rs.get[WorkbenchEmail](loadPolicyContext.g.resultName.email), rs.boolean(loadPolicyContext.p.resultName.public)),
+        (rs.stringOpt(loadPolicyContext.gm.resultName.memberUserId).map(WorkbenchUserId), rs.stringOpt(loadPolicyContext.sg.resultName.name).map(WorkbenchGroupName), rs.stringOpt(loadPolicyContext.sp.resultName.name).map(AccessPolicyName(_)), rs.stringOpt(loadPolicyContext.sr.resultName.name).map(ResourceId(_)), rs.stringOpt(loadPolicyContext.srt.resultName.name).map(ResourceTypeName(_))),
+        (rs.stringOpt(loadPolicyContext.rr.resultName.role).map(ResourceRoleName(_)), rs.stringOpt(loadPolicyContext.ra.resultName.action).map(ResourceAction(_))))).list().apply().groupBy(_._1)
+
+      results.map { case (policyInfo, resultsByPolicy) =>
+        val (_, memberResults, roleActionResults) = resultsByPolicy.unzip3
+
+        val members: Set[WorkbenchSubject] = memberResults.collect {
+          case (Some(userId), None, None, None, None) => userId
+          case (None, Some(groupName), None, None, None) => groupName
+          case (None, Some(_), Some(policyName), Some(resourceName), Some(resourceTypeName)) => FullyQualifiedPolicyId(FullyQualifiedResourceId(resourceTypeName, resourceName), policyName)
+        }.toSet
+
+        val (roles, actions) = roleActionResults.unzip
+
+        AccessPolicy(FullyQualifiedPolicyId(FullyQualifiedResourceId(policyInfo.resourceTypeName, policyInfo.resourceId), policyInfo.name), members, policyInfo.email, roles.flatten.toSet, actions.flatten.toSet, policyInfo.public)
+      }.toSet
+    }
+  }
 }
 
-private final case class PolicyInfo(name: AccessPolicyName, resourceId: ResourceId, resourceTypeName: ResourceTypeName, email: WorkbenchEmail, public: Boolean)
+// used when loading full access policies to *theoretically* make accessing and referring to the numerous required tables a little simpler
+private final case class LoadPolicyContext(g: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupRecord], GroupRecord] = GroupTable.syntax("g"),
+                                           p: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRecord], PolicyRecord] = PolicyTable.syntax("p"),
+                                           r: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRecord], ResourceRecord] = ResourceTable.syntax("r"),
+                                           rt: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceTypeRecord], ResourceTypeRecord] = ResourceTypeTable.syntax("rt"),
+                                           gm: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupMemberRecord], GroupMemberRecord] = GroupMemberTable.syntax("gm"),
+                                           sg: QuerySQLSyntaxProvider[SQLSyntaxSupport[GroupRecord], GroupRecord] = GroupTable.syntax("sg"),
+                                           sp: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRecord], PolicyRecord] = PolicyTable.syntax("sp"),
+                                           sr: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRecord], ResourceRecord] = ResourceTable.syntax("sr"),
+                                           srt: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceTypeRecord], ResourceTypeRecord] = ResourceTypeTable.syntax("srt"),
+                                           pr: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyRoleRecord], PolicyRoleRecord] = PolicyRoleTable.syntax("pr"),
+                                           rr: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceRoleRecord], ResourceRoleRecord] = ResourceRoleTable.syntax("rr"),
+                                           pa: QuerySQLSyntaxProvider[SQLSyntaxSupport[PolicyActionRecord], PolicyActionRecord] = PolicyActionTable.syntax("pa"),
+                                           ra: QuerySQLSyntaxProvider[SQLSyntaxSupport[ResourceActionRecord], ResourceActionRecord] = ResourceActionTable.syntax("ra"))
