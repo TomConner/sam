@@ -23,6 +23,16 @@ object OpenCensusIOUtils {
     traceIOSpan(IO(startSpan(name)), failureStatus)(f)
   }
 
+  def tracePureWithParent[T](
+                              name: String,
+                              parentSpan: Span,
+                              failureStatus: Throwable => Status = (_: Throwable) => Status.UNKNOWN
+                            )(f: Span => T): T = {
+    val span = startSpanWithParent(name, parentSpan)
+    val result = f(span)
+    endSpan(span, Status.OK)
+    result
+  }
 
   private def traceIOSpan[T](spanIO: IO[Span], failureStatus: Throwable => Status) (f: Span => IO[T]): IO[T] = {
     for {

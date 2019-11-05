@@ -24,7 +24,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val probe = TestCaseClass("asdfasdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)))
     // copy probe to make sure not just testing reference equality
-    val result = reporter.resultsMatch(Right(probe), Right(probe.copy()))
+    val result = reporter.resultsMatch(Right(probe), Right(probe.copy()), null)
     withClue(result.mismatchReasons) {
       result.matches should be (true)
     }
@@ -33,7 +33,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
   it should "match primitive" in {
     val reporter = createResultReporter
     val probe = false
-    val result = reporter.resultsMatch(Right(probe), Right(probe))
+    val result = reporter.resultsMatch(Right(probe), Right(probe), null)
     withClue(result.mismatchReasons) {
       result.matches should be (true)
     }
@@ -42,7 +42,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
   it should "match collection" in {
     val reporter = createResultReporter
     val probe = Seq(3,2,5,6,2)
-    val result = reporter.resultsMatch(Right(probe), Right(probe))
+    val result = reporter.resultsMatch(Right(probe), Right(probe), null)
     withClue(result.mismatchReasons) {
       result.matches should be (true)
     }
@@ -52,7 +52,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = Seq(3,2,6,2,5,2)
     val shadow = Seq(3,2,5,6,2,2)
-    val result = reporter.resultsMatch(Right(real), Right(shadow))
+    val result = reporter.resultsMatch(Right(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (true)
     }
@@ -62,7 +62,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = TestCaseClass("asdfasdf", Vector(TestInnerCaseClass(MyValueObject("ppp"), 99), TestInnerCaseClass(MyValueObject("qqq"), 88)))
     val shadow = TestCaseClass("asdfasdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)))
-    val result = reporter.resultsMatch(Right(real), Right(shadow))
+    val result = reporter.resultsMatch(Right(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (true)
     }
@@ -71,7 +71,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
   it should "match status codes" in {
     val reporter = createResultReporter
     val probe = new WorkbenchExceptionWithErrorReport(ErrorReport(StatusCodes.ImATeapot, "")(ErrorReportSource("")))
-    val result = reporter.resultsMatch(Left(probe), Left(probe))
+    val result = reporter.resultsMatch(Left(probe), Left(probe), null)
     withClue(result.mismatchReasons) {
       result.matches should be (true)
     }
@@ -81,7 +81,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = new IllegalArgumentException()
     val shadow = new RuntimeException()
-    val result = reporter.resultsMatch(Left(real), Left(shadow))
+    val result = reporter.resultsMatch(Left(real), Left(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (true)
     }
@@ -93,7 +93,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = TestCaseClass("asdfasdf", Seq(TestInnerCaseClass(MyValueObject("qq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)))
     val shadow = TestCaseClass("asdfasdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)))
-    val result = reporter.resultsMatch(Right(real), Right(shadow))
+    val result = reporter.resultsMatch(Right(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq("cannot find match for [TestInnerCaseClass(qq,88)] in [List(TestInnerCaseClass(qqq,88), TestInnerCaseClass(ppp,99))]")
@@ -104,7 +104,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = TestCaseClass("asdfasdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)), Some(TestInnerCaseClass(MyValueObject("oooo"), 77)))
     val shadow = TestCaseClass("asdfasdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)), Some(TestInnerCaseClass(MyValueObject("ooo"), 77)))
-    val result = reporter.resultsMatch(Right(real), Right(shadow))
+    val result = reporter.resultsMatch(Right(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq("values unequal: real [oooo], shadow [ooo]")
@@ -115,7 +115,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = 1
     val shadow = 2
-    val result = reporter.resultsMatch(Right(real), Right(shadow))
+    val result = reporter.resultsMatch(Right(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq("values unequal: real [1], shadow [2]")
@@ -126,7 +126,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = TestCaseClass("asdfsdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)))
     val shadow = TestCaseClass("asdfasdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)))
-    val result = reporter.resultsMatch(Right(real), Right(shadow))
+    val result = reporter.resultsMatch(Right(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq("values unequal: real [asdfsdf], shadow [asdfasdf]")
@@ -137,7 +137,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = TestCaseClass("asdfsdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 97)))
     val shadow = TestCaseClass("asdfasdf", Seq(TestInnerCaseClass(MyValueObject("qqq"), 88), TestInnerCaseClass(MyValueObject("ppp"), 99)))
-    val result = reporter.resultsMatch(Right(real), Right(shadow))
+    val result = reporter.resultsMatch(Right(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq("values unequal: real [asdfsdf], shadow [asdfasdf]", "cannot find match for [TestInnerCaseClass(ppp,97)] in [List(TestInnerCaseClass(qqq,88), TestInnerCaseClass(ppp,99))]")
@@ -148,7 +148,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = new WorkbenchExceptionWithErrorReport(ErrorReport(StatusCodes.ImATeapot, "")(ErrorReportSource("")))
     val shadow = new WorkbenchExceptionWithErrorReport(ErrorReport(StatusCodes.OK, "")(ErrorReportSource("")))
-    val result = reporter.resultsMatch(Left(real), Left(shadow))
+    val result = reporter.resultsMatch(Left(real), Left(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq(s"unequal error report status codes: real [Some(418 I'm a teapot)], shadow [Some(200 OK)]")
@@ -159,7 +159,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = new WorkbenchExceptionWithErrorReport(ErrorReport(StatusCodes.ImATeapot, "")(ErrorReportSource("")))
     val shadow = new RuntimeException("wrong")
-    val result = reporter.resultsMatch(Left(real), Left(shadow))
+    val result = reporter.resultsMatch(Left(real), Left(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq(s"real contained status code [Some(418 I'm a teapot)], shadow threw [java.lang.RuntimeException] message [wrong]")
@@ -170,7 +170,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = Seq(3,2,6,2,5,2,2,6)
     val shadow = Seq(3,2,5,6,2,2,5,3)
-    val result = reporter.resultsMatch(Right(real), Right(shadow))
+    val result = reporter.resultsMatch(Right(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq("unequal occurrences of [2]: real [4], shadow [3]", "unequal occurrences of [5]: real [1], shadow [2]", "unequal occurrences of [3]: real [1], shadow [2]", "unequal occurrences of [6]: real [2], shadow [1]")
@@ -181,7 +181,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = 1
     val shadow = new Exception("foo")
-    val result = reporter.resultsMatch(Right(real), Left(shadow))
+    val result = reporter.resultsMatch(Right(real), Left(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq("real and shadow are not comparable: real [Right(1)], shadow [Left(java.lang.Exception: foo)]")
@@ -192,7 +192,7 @@ class NewRelicShadowResultReporterSpec extends FlatSpec with Matchers with Mocki
     val reporter = createResultReporter
     val real = new Exception("foo")
     val shadow = 1
-    val result = reporter.resultsMatch(Left(real), Right(shadow))
+    val result = reporter.resultsMatch(Left(real), Right(shadow), null)
     withClue(result.mismatchReasons) {
       result.matches should be (false)
       result.mismatchReasons should contain theSameElementsAs Seq("real and shadow are not comparable: real [Left(java.lang.Exception: foo)], shadow [Right(1)]")

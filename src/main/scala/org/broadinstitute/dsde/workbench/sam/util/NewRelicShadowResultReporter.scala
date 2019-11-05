@@ -5,6 +5,8 @@ import com.typesafe.scalalogging.LazyLogging
 import org.broadinstitute.dsde.workbench.model.WorkbenchExceptionWithErrorReport
 import org.broadinstitute.dsde.workbench.newrelic.NewRelicMetrics
 import spray.json.DefaultJsonProtocol._
+import OpenCensusIOUtils._
+import io.opencensus.trace.Span
 
 case class MatchResult(matches: Boolean, mismatchReasons: Seq[String])
 
@@ -22,9 +24,9 @@ class NewRelicShadowResultReporter(val daoName: String, val newRelicMetrics: New
     * @tparam T
     * @return
     */
-  override def reportResult[T](methodCallInfo: MethodCallInfo, realTimedResult: TimedResult[T], shadowTimedResult: TimedResult[T]): IO[Unit] = {
+  override def reportResult[T](methodCallInfo: MethodCallInfo, realTimedResult: TimedResult[T], shadowTimedResult: TimedResult[T]): IO[Unit] = traceIO(s"reportResult/${methodCallInfo.functionName}") { span =>
     for {
-      matchResult <- IO(resultsMatch(realTimedResult.result, shadowTimedResult.result))
+      matchResult <- IO(resultsMatch(realTimedResult.result, shadowTimedResult.result, span))
       matchString = if(matchResult.matches) "match" else "mismatch"
       _ <- newRelicMetrics.incrementCounterIO(s"${daoName}/${methodCallInfo.functionName}/$matchString")
       perfImprovement = (realTimedResult.time - shadowTimedResult.time).toMillis
@@ -79,11 +81,11 @@ class NewRelicShadowResultReporter(val daoName: String, val newRelicMetrics: New
     * @tparam T
     * @return
     */
-  def resultsMatch[T](realResult: Either[Throwable, T], shadowResult: Either[Throwable, T]): MatchResult = {
+  def resultsMatch[T](realResult: Either[Throwable, T], shadowResult: Either[Throwable, T], span: Span): MatchResult = tracePureWithParent("resultsMatch", span) { childSpan =>
     (realResult, shadowResult) match {
       case (Left(realThrowable: WorkbenchExceptionWithErrorReport), Left(shadowThrowable: WorkbenchExceptionWithErrorReport)) =>
         // if they both failed with WorkbenchExceptionWithErrorReport make sure both have same status code
-        createMatchResult(realThrowable.errorReport.statusCode, shadowThrowable.errorReport.statusCode, "unequal error report status codes")
+        createMatchResult(realThrowable.errorReport.statusCode, shadowThrowable.errorReport.statusCode, "unequal error report status codes", childSpan)
 
       case (Left(realThrowable: WorkbenchExceptionWithErrorReport), Left(shadowThrowable)) =>
         // the real failure has a status code but the shadow does not
@@ -94,12 +96,12 @@ class NewRelicShadowResultReporter(val daoName: String, val newRelicMetrics: New
         MatchResult(true, Seq.empty)
 
       case (Right(realTraversable: Traversable[_]), Right(shadowTraversable: Traversable[_])) =>
-        traversablesContainSameElements(realTraversable, shadowTraversable)
+        traversablesContainSameElements(realTraversable, shadowTraversable, childSpan)
 
       case (Right(realCaseClass: Product), Right(shadowCaseClass: Product)) =>
-        caseClassesMatch(realCaseClass, shadowCaseClass)
+        caseClassesMatch(realCaseClass, shadowCaseClass, childSpan)
 
-      case (Right(realValue), Right(shadowValue)) => createMatchResult(realValue, shadowValue, "values unequal")
+      case (Right(realValue), Right(shadowValue)) => createMatchResult(realValue, shadowValue, "values unequal", childSpan)
 
       case (_, _) =>
         // either real or shadow failed but not both
@@ -114,17 +116,17 @@ class NewRelicShadowResultReporter(val daoName: String, val newRelicMetrics: New
     * @param shadowCaseClass
     * @return
     */
-  private def caseClassesMatch(realCaseClass: Product, shadowCaseClass: Product): MatchResult = {
+  private def caseClassesMatch(realCaseClass: Product, shadowCaseClass: Product, span: Span): MatchResult = tracePureWithParent("caseClassesMatch", span) { childSpan =>
     // I don't think a class mismatch is possible, but just in case let's check
-    val classMatch = createMatchResult(realCaseClass.getClass, shadowCaseClass.getClass, "class mismatch")
+    val classMatch = createMatchResult(realCaseClass.getClass, shadowCaseClass.getClass, "class mismatch", childSpan)
     val matchResults = realCaseClass.productIterator
       .zip(shadowCaseClass.productIterator)
       .map {
         case (realPart, shadowPart) =>
-          resultsMatch(Right(realPart), Right(shadowPart))
+          resultsMatch(Right(realPart), Right(shadowPart), childSpan)
       }
       .toSeq
-    aggregateMatchResults(matchResults :+ classMatch)
+    aggregateMatchResults(matchResults :+ classMatch, childSpan)
   }
 
   /**
@@ -135,7 +137,7 @@ class NewRelicShadowResultReporter(val daoName: String, val newRelicMetrics: New
     * @param shadowTraversable
     * @return
     */
-  private def traversablesContainSameElements(realTraversable: Traversable[Any], shadowTraversable: Traversable[Any]): MatchResult = {
+  private def traversablesContainSameElements(realTraversable: Traversable[Any], shadowTraversable: Traversable[Any], span: Span): MatchResult = tracePureWithParent("traversablesContainSameElements", span) { childSpan =>
     // one implementation would be to sort both taversables and compare pairwise but we don't have a sort order
 
     // this implementation groups by each distinct element to produce a map keyed by element with values of the occurrence count.
@@ -143,21 +145,21 @@ class NewRelicShadowResultReporter(val daoName: String, val newRelicMetrics: New
     // number of occurrences for the shadow match is the same as real
     val realDistinctElementCountsByElement = realTraversable.groupBy(x => x).map { case (key, values) => (key, values.size) }
     val shadowDistinctElementCountsByElement = shadowTraversable.groupBy(x => x).map { case (key, values) => (key, values.size) }
-    val sizeMatch = createMatchResult(realDistinctElementCountsByElement.size, shadowDistinctElementCountsByElement.size, s"unequal distinct item count, [${realDistinctElementCountsByElement.mkString(",")}] vs [${shadowDistinctElementCountsByElement.mkString(",")}]")
+    val sizeMatch = createMatchResult(realDistinctElementCountsByElement.size, shadowDistinctElementCountsByElement.size, s"unequal distinct item count, [${realDistinctElementCountsByElement.mkString(",")}] vs [${shadowDistinctElementCountsByElement.mkString(",")}]", childSpan)
     val elementsMatch = realDistinctElementCountsByElement.keySet.map { realElement =>
-      shadowDistinctElementCountsByElement.keySet.find(shadowElement => resultsMatch(Right(realElement), Right(shadowElement)).matches) match {
+      shadowDistinctElementCountsByElement.keySet.find(shadowElement => resultsMatch(Right(realElement), Right(shadowElement), childSpan).matches) match {
         case None => MatchResult(false, Seq(s"cannot find match for [$realElement] in [$shadowTraversable]"))
         case Some(shadowMatch) =>
           val realOccurrences = realDistinctElementCountsByElement(realElement)
           val shadowOccurrences = shadowDistinctElementCountsByElement(shadowMatch)
-          createMatchResult(realOccurrences, shadowOccurrences, s"unequal occurrences of [$realElement]")
+          createMatchResult(realOccurrences, shadowOccurrences, s"unequal occurrences of [$realElement]", childSpan)
       }
     }
-    aggregateMatchResults(elementsMatch.toSeq :+ sizeMatch)
+    aggregateMatchResults(elementsMatch.toSeq :+ sizeMatch, childSpan)
   }
 
   // checkName is passed by-name to avoid unnecessary toString and string concatenation when items match
-  private def createMatchResult[T](real: T, shadow: T, checkName: => String): MatchResult = {
+  private def createMatchResult[T](real: T, shadow: T, checkName: => String, span: Span): MatchResult = tracePureWithParent("createMatchResult", span) { childSpan =>
     val matches = real == shadow
     val reason = if (matches) {
       Seq.empty
@@ -167,7 +169,7 @@ class NewRelicShadowResultReporter(val daoName: String, val newRelicMetrics: New
     MatchResult(matches, reason)
   }
 
-  private def aggregateMatchResults(matchResults: Seq[MatchResult]): MatchResult = {
+  private def aggregateMatchResults(matchResults: Seq[MatchResult], span: Span): MatchResult = tracePureWithParent("aggregateMatchResults", span) { childSpan =>
     val mismatchReasons = matchResults.collect {
       case r if !r.matches => r.mismatchReasons
     }.flatten
