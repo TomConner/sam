@@ -364,7 +364,7 @@ trait PostgresGroupDAO {
 
   private def groupPKQueryForGroup(groupName: WorkbenchGroupName, groupTableAlias: String = "gpk"): SQLSyntax = {
     val gpk = GroupTable.syntax(groupTableAlias)
-    samsqls"select ${gpk.id} from ${GroupTable as gpk} where ${gpk.name} = $groupName"
+    samsqls"select ${gpk.id} from ${GroupTable as gpk} where ${gpk.name} = #$groupName"
   }
 
   private def groupPKQueryForPolicy(policyId: FullyQualifiedPolicyId,
@@ -380,6 +380,6 @@ trait PostgresGroupDAO {
               join ${PolicyTable as p} on ${r.id} = ${p.resourceId}
               where ${rt.name} = ${policyId.resource.resourceTypeName}
               and ${r.name} = ${policyId.resource.resourceId}
-              and ${p.name} = ${policyId.accessPolicyName}"""
+              and ${p.name} = $#{policyId.accessPolicyName}"""
   }
 }
