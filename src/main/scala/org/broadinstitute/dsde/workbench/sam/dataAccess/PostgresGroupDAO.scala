@@ -380,6 +380,6 @@ trait PostgresGroupDAO {
               join ${PolicyTable as p} on ${r.id} = ${p.resourceId}
               where ${rt.name} = ${policyId.resource.resourceTypeName}
               and ${r.name} = ${policyId.resource.resourceId}
-              and ${p.name} = #${policyId.accessPolicyName}"""
+              and ${p.name} = ${policyId.accessPolicyName}"""
   }
 }
